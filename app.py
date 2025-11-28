@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 from pathlib import Path
 
 # =========================
@@ -267,31 +268,65 @@ elif pagina == "📈 Dashboard operacional":
 
     header_row = df_raw.loc[header_idx]
     primeiro_valido = header_row.first_valid_index()
-    colunas_validas = header_row[primeiro_valido:].dropna().tolist()
 
-    dados = df_raw.loc[header_idx + 1 :, [header_row.index[1], *header_row.index[primeiro_valido:]]]
-    dados.columns = ["Indicador", *colunas_validas]
+    # A planilha usa muitas colunas "Unnamed"; precisamos trabalhar por posição
+    # para evitar erros do tipo "slice indices must be integers".
+    pos_inicio = df_raw.columns.get_loc(primeiro_valido)
+    colunas_validas = [
+        (df_raw.columns[i], header_row.iloc[i])
+        for i in range(pos_inicio, len(header_row))
+        if pd.notna(header_row.iloc[i])
+    ]
+
+    dados = df_raw.loc[
+        header_idx + 1 :,
+        [header_row.index[1], *[col for col, _ in colunas_validas]],
+    ].copy()
+    dados.columns = ["Indicador", *[nome for _, nome in colunas_validas]]
 
     dados = dados.dropna(how="all")
     dados_indicadores = dados.dropna(axis=0, how="all").copy()
+    dados_indicadores["Indicador"] = dados_indicadores["Indicador"].astype(str).str.strip()
 
     # Tabela com indicadores consolidados (MWh / R$)
     st.subheader("Indicadores por distribuidora")
     st.dataframe(dados_indicadores, use_container_width=True)
 
     # Destaques numéricos: usamos as linhas com valores numéricos nas primeiras colunas.
-    destaques = (
-        dados_indicadores
-        .set_index("Indicador")
-        .select_dtypes(include=["number", "float", "int"])
-        .iloc[:4]
-    )
+    destaques = dados_indicadores.set_index("Indicador").select_dtypes(include=["number", "float", "int"]).iloc[:4]
 
     if not destaques.empty:
         st.markdown("### Geração e venda (MWh e R$)")
         st.bar_chart(destaques)
     else:
         st.info("Nenhum dado numérico encontrado para montar os gráficos.")
+
+    # Gráficos de pizza para replicar a planilha
+    def plot_pizza(indicador: str, titulo: str):
+        base = dados_indicadores.set_index("Indicador")
+        if indicador not in base.index:
+            st.info(f"Indicador '{indicador}' não encontrado para montar o gráfico.")
+            return
+
+        serie = pd.to_numeric(base.loc[indicador], errors="coerce").dropna()
+        if serie.empty:
+            st.info(f"Sem valores numéricos para '{indicador}'.")
+            return
+
+        fig, ax = plt.subplots()
+        ax.pie(serie.values, labels=serie.index, autopct="%1.1f%%", startangle=90)
+        ax.set_title(titulo)
+        ax.axis("equal")
+        st.pyplot(fig)
+
+    st.markdown("### Distribuição por distribuidora (gráficos de pizza)")
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        plot_pizza("ENERGIA MENSAL VENDIDA (MWh)", "Energia vendida (MWh)")
+
+    with col_b:
+        plot_pizza("ENERGIA MENSAL FALTANTE (MWh)", "Energia faltante (MWh)")
 
 # =========================
 # PÁGINA DE USINAS
