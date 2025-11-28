@@ -11,7 +11,24 @@ st.set_page_config(
     layout="wide",
 )
 
-EXCEL_PATH = Path("Gestao_de_Usinas_e_UCs.xlsx")
+EXCEL_DEFAULT_PATH = Path("Gestao_de_Usinas_e_UCs.xlsx")
+
+
+def localizar_arquivo_excel(default_path: Path) -> Path | None:
+    """Tenta localizar o arquivo Excel no diretório do app.
+
+    1. Usa o caminho padrão, se existir.
+    2. Se não existir, procura qualquer arquivo ``*.xlsx`` e pega o mais recente.
+    """
+
+    if default_path.exists():
+        return default_path
+
+    candidatos = sorted(Path(".").glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if candidatos:
+        return candidatos[0]
+
+    return None
 
 @st.cache_data
 def carregar_planilhas(path: Path):
@@ -120,11 +137,22 @@ def calcular_metricas_ucs(df_ucs: pd.DataFrame):
 
 st.sidebar.title("Gestão de Usinas & UCs")
 
-if not EXCEL_PATH.exists():
-    st.error(f"Arquivo Excel não encontrado: {EXCEL_PATH}")
+excel_path = localizar_arquivo_excel(EXCEL_DEFAULT_PATH)
+if not excel_path:
+    st.error(
+        "Arquivo Excel não encontrado. Coloque um arquivo .xlsx na mesma pasta "
+        "do aplicativo ou ajuste o nome em `EXCEL_DEFAULT_PATH`."
+    )
     st.stop()
 
-sheets = carregar_planilhas(EXCEL_PATH)
+sheets = carregar_planilhas(excel_path)
+st.sidebar.success(f"Arquivo carregado: {excel_path.name}")
+
+if excel_path.name != EXCEL_DEFAULT_PATH.name:
+    st.sidebar.info(
+        "O arquivo padrão não foi encontrado; usando o arquivo Excel mais recente "
+        "localizado na pasta."
+    )
 abas_disponiveis = list(sheets.keys())
 
 pagina = st.sidebar.radio(
