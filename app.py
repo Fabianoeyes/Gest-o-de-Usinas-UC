@@ -159,6 +159,7 @@ pagina = st.sidebar.radio(
     "Navegação",
     [
         "📊 Dashboard geral",
+        "📈 Dashboard operacional",
         "⚡ Usinas",
         "🏠 UCs",
         "📑 Editor de planilhas (avançado)",
@@ -232,6 +233,65 @@ if pagina == "📊 Dashboard geral":
         "OBS: As métricas e gráficos podem (e devem) ser ajustados para "
         "reproduzir exatamente os cálculos da sua planilha."
     )
+
+# =========================
+# DASHBOARD OPERACIONAL
+# =========================
+
+elif pagina == "📈 Dashboard operacional":
+    st.title("📈 Dashboard Operacional")
+
+    nome_aba = "Dashboard Operacional"
+    if nome_aba not in sheets:
+        st.error("Aba 'Dashboard Operacional' não encontrada no Excel. Ajuste o nome no código.")
+        st.stop()
+
+    df_raw = sheets[nome_aba].copy()
+
+    # A aba é composta por tabelas posicionadas (título em 144 e dados a partir de 145).
+    # Para não depender das posições exatas, detectamos a linha onde aparecem as distribuidoras
+    # (ex.: ENEL CE, EQUATORIAL PI, etc.) e usamos essa linha como cabeçalho dinâmico.
+    header_idx = None
+    for idx, row in df_raw.iterrows():
+        if row.astype(str).str.contains("ENEL CE", na=False).any():
+            header_idx = idx
+            break
+
+    if header_idx is None:
+        st.warning(
+            "Não foi possível localizar os rótulos de distribuidoras na aba. "
+            "Confira se a planilha mantém o texto 'ENEL CE' ou atualize o parser."
+        )
+        st.dataframe(df_raw)
+        st.stop()
+
+    header_row = df_raw.loc[header_idx]
+    primeiro_valido = header_row.first_valid_index()
+    colunas_validas = header_row[primeiro_valido:].dropna().tolist()
+
+    dados = df_raw.loc[header_idx + 1 :, [header_row.index[1], *header_row.index[primeiro_valido:]]]
+    dados.columns = ["Indicador", *colunas_validas]
+
+    dados = dados.dropna(how="all")
+    dados_indicadores = dados.dropna(axis=0, how="all").copy()
+
+    # Tabela com indicadores consolidados (MWh / R$)
+    st.subheader("Indicadores por distribuidora")
+    st.dataframe(dados_indicadores, use_container_width=True)
+
+    # Destaques numéricos: usamos as linhas com valores numéricos nas primeiras colunas.
+    destaques = (
+        dados_indicadores
+        .set_index("Indicador")
+        .select_dtypes(include=["number", "float", "int"])
+        .iloc[:4]
+    )
+
+    if not destaques.empty:
+        st.markdown("### Geração e venda (MWh e R$)")
+        st.bar_chart(destaques)
+    else:
+        st.info("Nenhum dado numérico encontrado para montar os gráficos.")
 
 # =========================
 # PÁGINA DE USINAS
